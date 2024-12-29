@@ -83,7 +83,12 @@ impl<'a> State<'a> {
     }
 
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
-        todo!()
+        if new_size.width > 0 && new_size.height > 0 {
+            self.size = new_size;
+            self.config.width = new_size.width;
+            self.config.height = new_size.height;
+            self.surface.configure(&self.device, &self.config);
+        }
     }
 
     fn input(&mut self, event: &WindowEvent) -> bool {
@@ -103,13 +108,16 @@ pub async fn run() {
     env_logger::init();
     let event_loop = EventLoop::new().unwrap();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
-    let state = State::new(&window).await;
+    let mut state = State::new(&window).await;
 
     let res = event_loop.run(move |event, control_flow| match event {
         Event::WindowEvent { 
             window_id, 
             ref event 
         } if window_id == state.window().id() => match event {
+            WindowEvent::Resized(physical_size) => {
+                state.resize(*physical_size);
+            }
             WindowEvent::CloseRequested 
             | WindowEvent::KeyboardInput { 
                 event:
