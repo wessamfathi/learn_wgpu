@@ -92,15 +92,50 @@ impl<'a> State<'a> {
     }
 
     fn input(&mut self, event: &WindowEvent) -> bool {
-        todo!()
+        false
     }
 
     fn update(&mut self) {
-        todo!()
+        
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        todo!()
+        let output = self.surface.get_current_texture()?;
+        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Render Commands Encoder"),
+        });
+
+        // create our render pass
+        let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Render Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment { 
+                view: &view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color { 
+                        r: 0.1,
+                        g: 0.2,
+                        b: 0.3, 
+                        a: 1.0
+                    }),
+                    store: wgpu::StoreOp::Store,
+                }
+            })],
+            depth_stencil_attachment: None,
+            occlusion_query_set: None,
+            timestamp_writes: None,
+        });
+
+        // encoder borrows render_pass via (&mut self)
+        // drop it manually to call encoder.finish()
+        drop(render_pass);
+
+        // submit command queue
+        self.queue.submit(std::iter::once(encoder.finish()));
+        output.present();
+
+        Ok(())
     }
 }
 
@@ -114,22 +149,45 @@ pub async fn run() {
         Event::WindowEvent { 
             window_id, 
             ref event 
-        } if window_id == state.window().id() => match event {
-            WindowEvent::Resized(physical_size) => {
-                state.resize(*physical_size);
+        } if window_id == state.window().id() => if !state.input(event) {
+            match event {
+                WindowEvent::CloseRequested 
+                | WindowEvent::KeyboardInput { 
+                    event:
+                        KeyEvent {
+                            state: ElementState::Pressed,
+                            physical_key: PhysicalKey::Code(KeyCode::Escape),
+                            ..
+                        },
+                    ..
+                } => control_flow.exit(),
+                WindowEvent::Resized(physical_size) => {
+                    state.resize(*physical_size);
+                },
+                WindowEvent::RedrawRequested => {
+                    // request another frame after this one
+                    state.window().request_redraw();
+
+                    state.update();
+                    match state.render() {
+                        Ok(_) => {}
+                        // Reconfigure the surface if it's lost or out of date
+                        Err(
+                            wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated,
+                        ) => state.resize(state.size),
+                        // Quit on OOM error
+                        Err(wgpu::SurfaceError::OutOfMemory) => {
+                            log::error!("Out of memory");
+                            control_flow.exit();
+                        },
+                        Err(wgpu::SurfaceError::Timeout) => {
+                            log::warn!("Device timeout!")
+                        }
+                    }
+                }
+                _ => {}
             }
-            WindowEvent::CloseRequested 
-            | WindowEvent::KeyboardInput { 
-                event:
-                    KeyEvent {
-                        state: ElementState::Pressed,
-                        physical_key: PhysicalKey::Code(KeyCode::Escape),
-                        ..
-                    },
-                ..
-            } => control_flow.exit(),
-            _ => {}
-        },
+        }
         _ => {}
     });
 
