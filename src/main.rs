@@ -1,3 +1,3 @@
 fn main() {
-    println!("Hello, world!");
+    learn_wgpu::run();
 }
